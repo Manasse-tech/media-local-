@@ -1,5 +1,43 @@
 @import "tailwindcss";
 
+:root {
+  color-scheme: dark;
+  --app-bg: #070a12;
+  --app-surface: rgba(15, 20, 34, 0.72);
+  --app-border: rgba(148, 163, 184, 0.14);
+  --app-accent: #7c8cff;
+  --app-cyan: #45d9ff;
+}
+
+html,
+body {
+  min-height: 100%;
+  background: var(--app-bg);
+}
+
+body {
+  color: #f8fafc;
+  background:
+    radial-gradient(circle at 78% -10%, rgba(91, 104, 255, 0.18), transparent 34rem),
+    radial-gradient(circle at 8% 110%, rgba(20, 184, 166, 0.1), transparent 30rem),
+    var(--app-bg);
+  font-feature-settings: "ss01" 1, "cv11" 1;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+a,
+[role="button"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--app-cyan);
+  outline-offset: 3px;
+}
+
 @keyframes ripple {
   0% {
     transform: translate(-50%, -50%) scale(0);
