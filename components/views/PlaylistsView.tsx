@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { ListMusic, Plus, Play, Trash2, Edit2, X, Music2 } from 'lucide-react';
+import { ListMusic, Plus, Play, Trash2, Edit2, X, Music2, Sparkles, Wand2 } from 'lucide-react';
 import { useLibrary } from '@/context/LibraryContext';
 import { usePlayer } from '@/context/PlayerContext';
 import { Playlist } from '@/types/media';
@@ -13,10 +13,12 @@ interface PlaylistsViewProps {
 }
 
 export function PlaylistsView({ onOpenPlaylist }: PlaylistsViewProps) {
-  const { playlists, createPlaylist, deletePlaylist, mediaList } = useLibrary();
+  const { playlists, createPlaylist, deletePlaylist, mediaList, autoGeneratePlaylists } = useLibrary();
   const { playMedia } = usePlayer();
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isAutoGenerating, setIsAutoGenerating] = useState(false);
+  const [autoGenToast, setAutoGenToast] = useState<string | null>(null);
   const [playlistToDelete, setPlaylistToDelete] = useState<Playlist | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
@@ -31,10 +33,38 @@ export function PlaylistsView({ onOpenPlaylist }: PlaylistsViewProps) {
     onOpenPlaylist(pl.id);
   };
 
+  const handleAutoGenerate = async () => {
+    setIsAutoGenerating(true);
+    try {
+      const generated = await autoGeneratePlaylists({ byGenre: true, byRecent: true, byFavorites: true });
+      if (generated.length > 0) {
+        setAutoGenToast(`${generated.length} playlist(s) générée(s) avec succès !`);
+      } else {
+        setAutoGenToast('Toutes les playlists automatiques existent déjà ou nécessitent plus de titres.');
+      }
+      setTimeout(() => setAutoGenToast(null), 3500);
+    } finally {
+      setIsAutoGenerating(false);
+    }
+  };
+
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 max-w-7xl mx-auto w-full">
+      {/* Toast */}
+      {autoGenToast && (
+        <div className="p-3 rounded-xl bg-blue-950/90 border border-blue-800/80 text-blue-300 text-xs font-semibold flex items-center justify-between animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-blue-400 shrink-0" />
+            <span>{autoGenToast}</span>
+          </div>
+          <button onClick={() => setAutoGenToast(null)} className="p-1 hover:text-white">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
             <ListMusic className="w-7 h-7 text-blue-400" />
@@ -45,13 +75,27 @@ export function PlaylistsView({ onOpenPlaylist }: PlaylistsViewProps) {
           </p>
         </div>
 
-        <button
-          onClick={() => setIsCreateOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-600/30 transition-all cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Nouvelle playlist</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {mediaList.length > 0 && (
+            <button
+              disabled={isAutoGenerating}
+              onClick={handleAutoGenerate}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-600/30 to-purple-600/30 hover:from-indigo-600/50 hover:to-purple-600/50 border border-indigo-500/40 text-indigo-300 hover:text-white text-xs font-semibold shadow-md transition-all cursor-pointer"
+              title="Générer automatiquement des playlists par genre, récents et favoris"
+            >
+              <Wand2 className={`w-3.5 h-3.5 text-purple-400 ${isAutoGenerating ? 'animate-spin' : ''}`} />
+              <span>Générer automatiquement</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => setIsCreateOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-600/30 transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Nouvelle playlist</span>
+          </button>
+        </div>
       </div>
 
       {/* Grid */}

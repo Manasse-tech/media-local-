@@ -30,7 +30,7 @@ interface PlayerContextType {
   handleTimeUpdate: (time: number) => void;
   handleDurationChange: (dur: number) => void;
   // Actions
-  playMedia: (media: MediaItem, newQueue?: MediaItem[]) => void;
+  playMedia: (media: MediaItem, newQueue?: MediaItem[], options?: { autoOpenModal?: boolean }) => void;
   togglePlay: () => void;
   pause: () => void;
   resume: () => void;
@@ -199,7 +199,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   // Play a specific media item with optional crossfade transition
   const playMedia = useCallback(
-    async (media: MediaItem, newQueue?: MediaItem[]) => {
+    async (media: MediaItem, newQueue?: MediaItem[], options?: { autoOpenModal?: boolean }) => {
       if (newQueue) {
         setQueue(newQueue);
         const idx = newQueue.findIndex((m) => m.id === media.id);
@@ -236,11 +236,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       setPosition(0);
       setDuration(media.duration || 0);
 
+      // Do NOT forcefully push the Now Playing modal if autoOpenModal is false (e.g. automatic track progression)
       if (media.type === 'video') {
-        setIsVideoPlayerOpen(true);
-        setIsNowPlayingOpen(false);
+        if (options?.autoOpenModal ?? true) {
+          setIsVideoPlayerOpen(true);
+          setIsNowPlayingOpen(false);
+        }
       } else {
-        setIsNowPlayingOpen(true);
+        if (options?.autoOpenModal) {
+          setIsNowPlayingOpen(true);
+        }
       }
 
       // Resume position if exists
@@ -256,7 +261,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
             if (crossfadeDuration > 0 && media.type === 'audio') {
               await audioEngine.crossfadeTo(0, 0);
               await el.play();
-              await audioEngine.crossfadeTo(1, crossfadeDuration / 2);
+              await audioEngine.crossfadeTo(isMuted ? 0 : volume, crossfadeDuration / 2);
             } else {
               await el.play();
             }
@@ -265,13 +270,14 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
           }
           if (media.type === 'audio') {
             ensureAudioEngine();
+            audioEngine.setMasterGain(isMuted ? 0 : volume);
           }
         }
       }, 50);
 
       recordPlayback(media, targetTime);
     },
-    [ensureAudioEngine, recordPlayback, crossfadeDuration, currentMedia, isPlaying]
+    [ensureAudioEngine, recordPlayback, crossfadeDuration, currentMedia, isPlaying, volume, isMuted]
   );
 
   const togglePlay = useCallback(() => {
@@ -343,22 +349,25 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       el.volume = clamped;
       el.muted = clamped === 0;
     }
+    audioEngine.setMasterGain(clamped === 0 ? 0 : clamped);
   }, [getActiveElement, setVolumeState]);
 
   const toggleMute = useCallback(() => {
     setIsMuted((prev) => {
       const next = !prev;
       const el = getActiveElement();
+      const targetVol = next ? 0 : (volume > 0 ? volume : 0.5);
       if (el) {
         el.muted = next;
         if (!next && el.volume === 0) {
-          el.volume = volume > 0 ? volume : 0.5;
-          setVolumeState(el.volume);
+          el.volume = targetVol;
+          setVolumeState(targetVol);
         }
       }
+      audioEngine.setMasterGain(next ? 0 : targetVol);
       return next;
     });
-  }, [getActiveElement, volume]);
+  }, [getActiveElement, volume, setVolumeState]);
 
   const setSpeed = useCallback((spd: number) => {
     setSpeedState(spd);
@@ -399,7 +408,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setQueueIndex(nextIdx);
     const nextMedia = queue[nextIdx];
     if (nextMedia) {
-      playMedia(nextMedia);
+      playMedia(nextMedia, undefined, { autoOpenModal: false });
     }
   }, [queue, queueIndex, repeat, currentMedia, shuffle, seek, resume, playMedia]);
 
@@ -421,7 +430,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setQueueIndex(prevIdx);
     const prevMedia = queue[prevIdx];
     if (prevMedia) {
-      playMedia(prevMedia);
+      playMedia(prevMedia, undefined, { autoOpenModal: false });
     }
   }, [getActiveElement, queue, queueIndex, repeat, seek, playMedia]);
 

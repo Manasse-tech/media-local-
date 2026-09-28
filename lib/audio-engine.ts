@@ -361,6 +361,13 @@ class AudioEngine {
     return this.isNormalized;
   }
 
+  public setMasterGain(vol: number): void {
+    if (this.gainNode && this.ctx) {
+      const clamped = Math.max(0, Math.min(1, vol));
+      this.gainNode.gain.setTargetAtTime(clamped, this.ctx.currentTime, 0.01);
+    }
+  }
+
   public async crossfadeTo(targetGain: number, durationSeconds: number = 1.5): Promise<void> {
     if (!this.gainNode || !this.ctx) return;
     const now = this.ctx.currentTime;

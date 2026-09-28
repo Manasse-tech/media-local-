@@ -53,6 +53,7 @@ interface LibraryContextType {
   updateMediaLyrics: (id: string, segments: LyricSegment[]) => Promise<void>;
   deleteMediaLyrics: (id: string) => Promise<void>;
   updateMediaMetadata: (id: string, title: string, artist: string, album: string) => Promise<void>;
+  autoGeneratePlaylists: (options?: { byGenre?: boolean; byRecent?: boolean; byFavorites?: boolean }) => Promise<Playlist[]>;
 }
 
 const LibraryContext = createContext<LibraryContextType | null>(null);
@@ -590,6 +591,87 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     setHistory([]);
   }, []);
 
+  const autoGeneratePlaylists = useCallback(
+    async (options: { byGenre?: boolean; byRecent?: boolean; byFavorites?: boolean } = { byGenre: true, byRecent: true, byFavorites: true }): Promise<Playlist[]> => {
+      const newPlaylists: Playlist[] = [];
+      const currentList = mediaListRef.current;
+      const existingTitles = new Set(playlists.map((p) => p.title.toLowerCase()));
+
+      // 1. Playlists par Genres musicaux
+      if (options.byGenre) {
+        const genreMap = new Map<string, string[]>();
+        currentList.forEach((m) => {
+          if (m.type === 'audio' && m.genre && m.genre.trim() && m.genre.toLowerCase() !== 'inconnu') {
+            const g = m.genre.trim();
+            if (!genreMap.has(g)) genreMap.set(g, []);
+            genreMap.get(g)!.push(m.id);
+          }
+        });
+
+        for (const [genre, ids] of genreMap.entries()) {
+          const title = `Mix ${genre}`;
+          if (!existingTitles.has(title.toLowerCase()) && ids.length >= 1) {
+            const pl: Playlist = {
+              id: `playlist_genre_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+              title,
+              description: `Playlist automatique basée sur le genre musical ${genre} (${ids.length} titres)`,
+              mediaIds: ids,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            };
+            await savePlaylistToDB(pl);
+            newPlaylists.push(pl);
+            existingTitles.add(title.toLowerCase());
+          }
+        }
+      }
+
+      // 2. Playlists des Derniers Ajouts (Récents)
+      if (options.byRecent) {
+        const sortedByAdded = [...currentList].sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0)).slice(0, 30);
+        const title = 'Derniers ajouts';
+        if (!existingTitles.has(title.toLowerCase()) && sortedByAdded.length >= 1) {
+          const pl: Playlist = {
+            id: `playlist_recent_${Date.now()}`,
+            title,
+            description: 'Sélection automatique des derniers titres ajoutés à la bibliothèque locale',
+            mediaIds: sortedByAdded.map((m) => m.id),
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+          await savePlaylistToDB(pl);
+          newPlaylists.push(pl);
+          existingTitles.add(title.toLowerCase());
+        }
+      }
+
+      // 3. Playlists des Coups de Cœur (Favoris)
+      if (options.byFavorites) {
+        const favs = currentList.filter((m) => m.isFavorite);
+        const title = 'Coups de Cœur';
+        if (!existingTitles.has(title.toLowerCase()) && favs.length >= 1) {
+          const pl: Playlist = {
+            id: `playlist_favs_${Date.now()}`,
+            title,
+            description: 'Tous vos morceaux et médias préférés marqués comme favoris',
+            mediaIds: favs.map((m) => m.id),
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+          await savePlaylistToDB(pl);
+          newPlaylists.push(pl);
+          existingTitles.add(title.toLowerCase());
+        }
+      }
+
+      if (newPlaylists.length > 0) {
+        setPlaylists((prev) => [...newPlaylists, ...prev]);
+      }
+      return newPlaylists;
+    },
+    [playlists]
+  );
+
   return (
     <LibraryContext.Provider
       value={{
@@ -622,6 +704,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         updateMediaLyrics,
         deleteMediaLyrics,
         updateMediaMetadata,
+        autoGeneratePlaylists,
       }}
     >
       {children}

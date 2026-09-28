@@ -287,34 +287,6 @@ export function DisplayCustomizerModal({
                 </div>
               </div>
             </div>
-
-            {/* Background image actions */}
-            <div className="pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
-              <input
-                ref={bgFileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={onBgUpload}
-              />
-              <button
-                onClick={() => bgFileInputRef.current?.click()}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold flex items-center gap-2 cursor-pointer transition-colors"
-              >
-                <Upload className="w-4 h-4 text-blue-400" />
-                <span>{customBgImage ? 'Changer l’image de fond' : 'Importer une image personnalisée'}</span>
-              </button>
-
-              {customBgImage && (
-                <button
-                  onClick={onResetBg}
-                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-rose-950/60 hover:text-rose-400 text-slate-300 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors border border-slate-700/60"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Rétablir le thème par défaut</span>
-                </button>
-              )}
-            </div>
           </div>
         </div>
 

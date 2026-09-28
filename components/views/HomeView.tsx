@@ -109,69 +109,6 @@ export function HomeView({ onRouteChange, onOpenAlbum, onOpenPlaylist }: HomeVie
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
             Accueil
           </h1>
-
-          {/* Collapsible Info Dropdown Button */}
-          <div className="relative" ref={infoButtonRef}>
-            <button
-              onClick={(e) => {
-                createRipple(e);
-                setIsInfoOpen((prev) => !prev);
-              }}
-              className="relative overflow-hidden flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900/90 hover:bg-slate-800 border border-slate-800 text-[11px] font-medium text-slate-300 transition-all active:scale-95 cursor-pointer"
-              title="Afficher les détails de la bibliothèque"
-            >
-              {ripples.map((ripple) => (
-                <span
-                  key={ripple.id}
-                  className="absolute bg-white/25 rounded-full pointer-events-none animate-ripple"
-                  style={{
-                    left: ripple.x,
-                    top: ripple.y,
-                    width: '50px',
-                    height: '50px',
-                    transform: 'translate(-50%, -50%)',
-                  }}
-                />
-              ))}
-              <Info className="w-3.5 h-3.5 text-blue-400" />
-              <span className="hidden xs:inline">Infos ({mediaList.length})</span>
-              <ChevronDown
-                className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${
-                  isInfoOpen ? 'rotate-180' : ''
-                }`}
-              />
-            </button>
-
-            {isInfoOpen && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                className="absolute left-0 mt-2 z-50 w-60 p-3 rounded-2xl bg-slate-950 border border-slate-700/80 shadow-2xl backdrop-blur-xl animate-in fade-in space-y-2 text-xs pointer-events-auto"
-              >
-                <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
-                  <span className="font-bold text-white text-[11px] uppercase tracking-wider">
-                    Statistiques locales
-                  </span>
-                  <span className="text-[10px] text-blue-400 font-mono font-semibold">
-                    {mediaList.length} fichiers
-                  </span>
-                </div>
-                <div className="space-y-1.5 text-slate-300 text-[11px]">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Morceaux audio :</span>
-                    <span className="font-semibold text-white">{audioList.length}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Vidéos :</span>
-                    <span className="font-semibold text-white">{videoList.length}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Playlists créées :</span>
-                    <span className="font-semibold text-white">{playlists.length}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
         </div>
 
         <div className="flex items-center gap-2">

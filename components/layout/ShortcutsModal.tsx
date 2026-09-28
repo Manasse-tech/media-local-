@@ -315,17 +315,6 @@ export function ShortcutsModal() {
         </div>
       )}
 
-      {/* Floating Quick Shortcut Guide Button */}
-      <button
-        onClick={() => setIsOpen(true)}
-        className="fixed bottom-20 right-4 hidden md:flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-medium shadow-xl backdrop-blur-md transition-all active:scale-95 z-30 cursor-pointer group"
-        title="Guide des raccourcis clavier (?)"
-      >
-        <Keyboard className="w-4 h-4 text-blue-400 group-hover:scale-110 transition-transform" />
-        <span className="text-[11px] font-semibold">Raccourcis</span>
-        <kbd className="px-1.5 py-0.2 bg-slate-800 text-[10px] text-slate-400 rounded border border-slate-700 font-mono">?</kbd>
-      </button>
-
       {/* Shortcuts Guide Modal */}
       {isOpen && (
         <div

@@ -341,33 +341,36 @@ export function SettingsView() {
       <section className="space-y-4">
         <h2 className="text-base font-bold text-white flex items-center gap-2">
           <Palette className="w-5 h-5 text-blue-400" />
-          <span>{t('language')}</span>
+          <span>{t('language')} (16 langues disponibles)</span>
         </h2>
-        <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-3">
+        <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-4">
           <p className="text-xs text-slate-400">
-            Choisissez la langue d&apos;affichage de l&apos;interface utilisateur. (Choose the UI display language).
+            Choisissez la langue d&apos;affichage de l&apos;interface utilisateur (africaines et internationales).
           </p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setLocale('fr')}
-              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                locale === 'fr'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-              }`}
-            >
-              Français
-            </button>
-            <button
-              onClick={() => setLocale('en')}
-              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                locale === 'en'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-              }`}
-            >
-              English
-            </button>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+            {useLanguage().availableLanguages.map((lang) => {
+              const isSelected = locale === lang.code;
+              return (
+                <button
+                  key={lang.code}
+                  onClick={() => setLocale(lang.code)}
+                  className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-blue-600/20 border-blue-500 ring-2 ring-blue-500/40 text-white shadow-md'
+                      : 'bg-slate-950/40 border-slate-800/80 hover:border-slate-700 text-slate-300 hover:bg-slate-900/60'
+                  }`}
+                >
+                  <span className="text-xl shrink-0">{lang.flag}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold truncate">{lang.name}</span>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
+                    </div>
+                    <span className="text-[10px] text-slate-400 block truncate">{lang.nativeName}</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       </section>
