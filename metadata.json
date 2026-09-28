@@ -1,0 +1,6 @@
+{
+  "name": "Local Media Player",
+  "description": "Lecteur audio et vidéo local et performant avec indexation locale IndexedDB, playlists, égaliseur et lecteur plein écran.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
