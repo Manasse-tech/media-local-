@@ -102,7 +102,7 @@ export function HomeView({ onRouteChange, onOpenAlbum, onOpenPlaylist }: HomeVie
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 max-w-7xl mx-auto w-full bg-gradient-to-b from-white/[0.025] to-transparent">
+    <div className="home-stage flex-1 overflow-y-auto p-4 md:p-8 space-y-8 max-w-7xl mx-auto w-full bg-gradient-to-b from-white/[0.025] to-transparent">
       {/* Top Bar for Mobile & Quick Actions */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
