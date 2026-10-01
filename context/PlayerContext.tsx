@@ -5,6 +5,12 @@ import { MediaItem, RepeatMode, VisualizerMode } from '@/types/media';
 import { useLibrary } from './LibraryContext';
 import { audioEngine } from '@/lib/audio-engine';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
+import {
+  savePlaybackSessionToDB,
+  getPlaybackSessionFromDB,
+  clearPlaybackSessionFromDB,
+  SavedPlaybackSession,
+} from '@/lib/db';
 
 interface PlayerContextType {
   currentMedia: MediaItem | null;
@@ -22,6 +28,9 @@ interface PlayerContextType {
   isNowPlayingOpen: boolean;
   isVideoPlayerOpen: boolean;
   isEqualizerOpen: boolean;
+  isFloatingMiniPlayerOpen: boolean;
+  setIsFloatingMiniPlayerOpen: (open: boolean) => void;
+  toggleFloatingMiniPlayer: () => void;
   activeMediaInfoItem: MediaItem | null;
   visualizerMode: VisualizerMode;
   audioRef: React.RefObject<HTMLAudioElement | null>;
@@ -67,6 +76,10 @@ interface PlayerContextType {
   setSleepTimer: (seconds: number | null) => void;
   crossfadeDuration: number;
   setCrossfadeDuration: (sec: number) => void;
+  // Continue Watching / Listening Session
+  savedSession: SavedPlaybackSession | null;
+  resumeSavedSession: () => Promise<void>;
+  clearSavedSession: () => Promise<void>;
 }
 
 const PlayerContext = createContext<PlayerContextType | null>(null);
@@ -87,6 +100,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [queueIndex, setQueueIndex] = useState(0);
   const [volumeNormalization, setVolumeNormalizationState] = useLocalStorage<boolean>('app_player_volume_normalization', false);
   const [isVideoAudioMode, setIsVideoAudioMode] = useState(false);
+  const [savedSession, setSavedSession] = useState<SavedPlaybackSession | null>(null);
+  const hasRestoredSessionRef = useRef(false);
 
   // Crossfade & Sleep Timer
   const [crossfadeDuration, setCrossfadeState] = useLocalStorage<number>('app_crossfade_duration', 0);
@@ -97,8 +112,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
   const [isVideoPlayerOpen, setIsVideoPlayerOpen] = useState(false);
   const [isEqualizerOpen, setIsEqualizerOpen] = useState(false);
+  const [isFloatingMiniPlayerOpen, setIsFloatingMiniPlayerOpen] = useLocalStorage<boolean>('app_floating_mini_player', false);
   const [activeMediaInfoItem, setActiveMediaInfoItem] = useState<MediaItem | null>(null);
   const [visualizerMode, setVisualizerMode] = useState<VisualizerMode>('bars');
+
+  const toggleFloatingMiniPlayer = useCallback(() => {
+    setIsFloatingMiniPlayerOpen((prev) => !prev);
+  }, [setIsFloatingMiniPlayerOpen]);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -189,13 +209,22 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }
   }, [volume, isMuted, speed, getActiveElement]);
 
-  // Attach Web Audio to audio element on play
-  const ensureAudioEngine = useCallback(() => {
-    if (audioRef.current && currentMedia?.type === 'audio') {
-      audioEngine.init(audioRef.current);
+  // Attach Web Audio DSP graph to active audio/video element on demand
+  const ensureAudioEngine = useCallback((mediaItem?: MediaItem | null) => {
+    const target = mediaItem !== undefined ? mediaItem : currentMedia;
+    const el = target?.type === 'video' ? videoRef.current : audioRef.current;
+    if (el) {
+      audioEngine.connectElement(el);
       audioEngine.resume();
     }
   }, [currentMedia]);
+
+  // Ensure audio engine is connected as soon as audioRef is mounted
+  useEffect(() => {
+    if (audioRef.current) {
+      audioEngine.connectElement(audioRef.current);
+    }
+  }, []);
 
   // Play a specific media item with optional crossfade transition
   const playMedia = useCallback(
@@ -268,16 +297,15 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
           } catch (e) {
             console.warn('Autoplay prevented:', e);
           }
-          if (media.type === 'audio') {
-            ensureAudioEngine();
-            audioEngine.setMasterGain(isMuted ? 0 : volume);
-          }
+          audioEngine.connectElement(el);
+          audioEngine.setMasterGain(isMuted ? 0 : volume);
+          audioEngine.resume();
         }
       }, 50);
 
       recordPlayback(media, targetTime);
     },
-    [ensureAudioEngine, recordPlayback, crossfadeDuration, currentMedia, isPlaying, volume, isMuted]
+    [recordPlayback, crossfadeDuration, currentMedia, isPlaying, volume, isMuted]
   );
 
   const togglePlay = useCallback(() => {
@@ -596,96 +624,127 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isPlaying]);
 
-  // Periodic resume position save for video
+  // Persist active playback session and queue to IndexedDB for "Continue Watching" on reload
+  const persistSession = useCallback((overridePosition?: number) => {
+    if (!currentMedia) return;
+    const currentPos = overridePosition !== undefined ? overridePosition : position;
+    const session: SavedPlaybackSession = {
+      mediaId: currentMedia.id,
+      position: Math.round(currentPos * 10) / 10,
+      duration: duration || currentMedia.duration || 0,
+      queueMediaIds: queue.map((m) => m.id),
+      queueIndex,
+      updatedAt: Date.now(),
+      mediaType: currentMedia.type,
+      title: currentMedia.title,
+      artist: currentMedia.artist,
+      thumbnail: currentMedia.thumbnail,
+    };
+    savePlaybackSessionToDB(session).catch(() => {});
+    setSavedSession(session);
+  }, [currentMedia, position, duration, queue, queueIndex]);
+
+  // Periodic resume position & session save while playing
   useEffect(() => {
     if (!currentMedia || !isPlaying) return;
 
     const interval = setInterval(() => {
       const el = getActiveElement();
       if (el && !el.paused) {
-        updateResumePosition(currentMedia.id, el.currentTime);
+        const pos = el.currentTime;
+        persistSession(pos);
+        updateResumePosition(currentMedia.id, pos);
       }
-    }, 4000);
+    }, 2500);
 
     return () => clearInterval(interval);
-  }, [currentMedia, isPlaying, getActiveElement, updateResumePosition]);
+  }, [currentMedia, isPlaying, getActiveElement, persistSession, updateResumePosition]);
 
-  // Global Keyboard Shortcuts
+  // Save session when tab is hidden or user unloads page
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const activeTag = document.activeElement?.tagName.toLowerCase();
-      if (activeTag === 'input' || activeTag === 'textarea' || (document.activeElement as HTMLElement)?.isContentEditable) {
-        return;
-      }
-
-      switch (e.code) {
-        case 'Space':
-          e.preventDefault();
-          togglePlay();
-          break;
-        case 'ArrowLeft':
-          e.preventDefault();
-          seekRelative(-5);
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          seekRelative(5);
-          break;
-        case 'ArrowUp':
-          e.preventDefault();
-          setVolume(Math.min(1, volume + 0.05));
-          break;
-        case 'ArrowDown':
-          e.preventDefault();
-          setVolume(Math.max(0, volume - 0.05));
-          break;
-        case 'KeyM':
-          e.preventDefault();
-          toggleMute();
-          break;
-        case 'KeyF':
-          e.preventDefault();
-          if (isVideoPlayerOpen) {
-            if (document.fullscreenElement) {
-              document.exitFullscreen().catch(() => {});
-            } else {
-              document.documentElement.requestFullscreen().catch(() => {});
-            }
-          }
-          break;
-        case 'KeyL':
-          cycleRepeat();
-          break;
-        case 'KeyS':
-          toggleShuffle();
-          break;
-        case 'KeyQ':
-          setIsQueueOpen((prev) => !prev);
-          break;
-        case 'Escape':
-          if (isVideoPlayerOpen) setIsVideoPlayerOpen(false);
-          else if (isNowPlayingOpen) setIsNowPlayingOpen(false);
-          else if (isQueueOpen) setIsQueueOpen(false);
-          else if (isEqualizerOpen) setIsEqualizerOpen(false);
-          break;
+    const handleUnloadOrHide = () => {
+      const el = getActiveElement();
+      if (currentMedia && el) {
+        persistSession(el.currentTime);
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    togglePlay,
-    seekRelative,
-    setVolume,
-    volume,
-    toggleMute,
-    isVideoPlayerOpen,
-    isNowPlayingOpen,
-    isQueueOpen,
-    isEqualizerOpen,
-    cycleRepeat,
-    toggleShuffle,
-  ]);
+    window.addEventListener('beforeunload', handleUnloadOrHide);
+    document.addEventListener('visibilitychange', handleUnloadOrHide);
+    return () => {
+      window.removeEventListener('beforeunload', handleUnloadOrHide);
+      document.removeEventListener('visibilitychange', handleUnloadOrHide);
+    };
+  }, [currentMedia, getActiveElement, persistSession]);
+
+  // Restore saved playback session from IndexedDB on page reload
+  useEffect(() => {
+    if (mediaList.length === 0 || hasRestoredSessionRef.current) return;
+
+    getPlaybackSessionFromDB().then((session) => {
+      if (!session || hasRestoredSessionRef.current) return;
+      setSavedSession(session);
+
+      // Restore session into player state if player is not currently playing
+      if (!currentMedia) {
+        const targetMedia = mediaList.find((m) => m.id === session.mediaId);
+        if (targetMedia) {
+          hasRestoredSessionRef.current = true;
+          // Rebuild queue from saved queueMediaIds
+          const restoredQueue = session.queueMediaIds
+            .map((id) => mediaList.find((m) => m.id === id))
+            .filter((m): m is MediaItem => Boolean(m));
+
+          const finalQueue = restoredQueue.length > 0 ? restoredQueue : [targetMedia];
+          const finalIndex = Math.max(0, Math.min(session.queueIndex || 0, finalQueue.length - 1));
+
+          setQueue(finalQueue);
+          setQueueIndex(finalIndex);
+          setCurrentMedia({
+            ...targetMedia,
+            resumePosition: session.position,
+          });
+          setPosition(session.position);
+          setDuration(session.duration || targetMedia.duration || 0);
+
+          // Prime active element's currentTime so pressing play resumes immediately
+          setTimeout(() => {
+            const el = targetMedia.type === 'video' ? videoRef.current : audioRef.current;
+            if (el && session.position > 0) {
+              try {
+                el.currentTime = session.position;
+              } catch {}
+            }
+          }, 250);
+        }
+      }
+    });
+  }, [mediaList, currentMedia]);
+
+  // Resume saved session action
+  const resumeSavedSession = useCallback(async () => {
+    const session = savedSession || (await getPlaybackSessionFromDB());
+    if (!session) return;
+    const target = mediaList.find((m) => m.id === session.mediaId);
+    if (!target) return;
+
+    const restoredQueue = session.queueMediaIds
+      .map((id) => mediaList.find((m) => m.id === id))
+      .filter((m): m is MediaItem => Boolean(m));
+
+    const finalQueue = restoredQueue.length > 0 ? restoredQueue : [target];
+    const targetWithPos: MediaItem = { ...target, resumePosition: session.position };
+    await playMedia(targetWithPos, finalQueue, { autoOpenModal: target.type === 'video' });
+    if (session.position > 0) {
+      seek(session.position);
+    }
+  }, [savedSession, mediaList, playMedia, seek]);
+
+  // Clear saved session action
+  const clearSavedSession = useCallback(async () => {
+    await clearPlaybackSessionFromDB();
+    setSavedSession(null);
+  }, []);
 
   return (
     <PlayerContext.Provider
@@ -733,6 +792,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         setIsNowPlayingOpen,
         setIsVideoPlayerOpen,
         setIsEqualizerOpen,
+        isFloatingMiniPlayerOpen,
+        setIsFloatingMiniPlayerOpen,
+        toggleFloatingMiniPlayer,
         setActiveMediaInfoItem,
         setVisualizerMode,
         stopPlayback,
@@ -746,6 +808,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         setSleepTimer,
         crossfadeDuration,
         setCrossfadeDuration,
+        savedSession,
+        resumeSavedSession,
+        clearSavedSession,
       }}
     >
       {/* Hidden Global Audio Element */}

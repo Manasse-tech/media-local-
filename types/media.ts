@@ -61,6 +61,9 @@ export interface Playlist {
   mediaIds: string[];
   createdAt: number;
   updatedAt: number;
+  isSmart?: boolean;
+  smartType?: 'genre' | 'year' | 'playCount' | 'recent' | 'favorites';
+  smartCriteria?: string;
 }
 
 export interface PlayHistoryItem {

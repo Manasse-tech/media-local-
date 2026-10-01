@@ -89,8 +89,8 @@ export function Header({ currentRoute, onRouteChange }: HeaderProps) {
           </div>
         </button>
 
-        {/* Top Navbar Items - Adaptive from md to xl */}
-        <nav className="hidden md:flex items-center gap-1 min-w-0">
+        {/* Top Navbar Items - Adaptive from lg */}
+        <nav className="hidden lg:flex items-center gap-1 min-w-0">
           {mainNavItems.map((item) => {
             const Icon = item.icon;
             const isActive =
@@ -103,7 +103,7 @@ export function Header({ currentRoute, onRouteChange }: HeaderProps) {
                 id={`top-nav-${item.id}`}
                 onClick={() => onRouteChange(item.id)}
                 title={item.label}
-                className={`flex items-center gap-1.5 px-2.5 xl:px-3 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer shrink-0 ${
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer shrink-0 ${
                   isActive
                     ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 font-semibold'
                     : 'text-slate-400 hover:text-white hover:bg-slate-900/80'
@@ -111,7 +111,6 @@ export function Header({ currentRoute, onRouteChange }: HeaderProps) {
               >
                 <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
                 <span className="hidden xl:inline">{item.label}</span>
-                <span className={`inline xl:hidden ${isActive ? 'inline font-semibold' : 'hidden'}`}>{item.label}</span>
                 {item.badge !== undefined && item.badge > 0 && (
                   <span
                     className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
@@ -128,25 +127,25 @@ export function Header({ currentRoute, onRouteChange }: HeaderProps) {
       </div>
 
       {/* Right Controls & Quick Actions */}
-      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+      <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
         {/* Import Fichiers */}
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 text-xs font-medium transition-colors cursor-pointer shrink-0"
+          className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 text-xs font-medium transition-colors cursor-pointer shrink-0"
           title="Importer des fichiers locaux"
         >
           <FilePlus className="w-3.5 h-3.5 text-blue-400" />
-          <span>Fichiers</span>
+          <span className="hidden lg:inline">Fichiers</span>
         </button>
 
         {/* Import Dossier */}
         <button
           onClick={() => importDirectory()}
-          className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-slate-700/50 text-slate-200 text-xs font-medium transition-colors cursor-pointer shrink-0"
+          className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-slate-700/50 text-slate-200 text-xs font-medium transition-colors cursor-pointer shrink-0"
           title="Importer un dossier entier"
         >
           <FolderPlus className="w-3.5 h-3.5 text-amber-400" />
-          <span>Dossier</span>
+          <span className="hidden xl:inline">Dossier</span>
         </button>
 
         {hasStoredDirectory && (

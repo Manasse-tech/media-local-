@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { MediaItem, Playlist, PlayHistoryItem, LyricSegment, LyricsStatus } from '@/types/media';
 import {
   getAllMediaFromDB,
@@ -22,6 +22,16 @@ import {
 import { processLocalFile } from '@/lib/metadata-parser';
 import { createDemoAudioTracks, createDemoVideoClip } from '@/lib/demo-samples';
 import { transcribeAudioWithGemini } from '@/lib/gemini-transcription';
+
+export interface SmartPlaylistOptions {
+  byGenre?: boolean;
+  byYear?: boolean;
+  byDecade?: boolean;
+  byPlayCount?: boolean;
+  byRecent?: boolean;
+  byFavorites?: boolean;
+  minTracks?: number;
+}
 
 interface LibraryContextType {
   mediaList: MediaItem[];
@@ -53,7 +63,13 @@ interface LibraryContextType {
   updateMediaLyrics: (id: string, segments: LyricSegment[]) => Promise<void>;
   deleteMediaLyrics: (id: string) => Promise<void>;
   updateMediaMetadata: (id: string, title: string, artist: string, album: string) => Promise<void>;
-  autoGeneratePlaylists: (options?: { byGenre?: boolean; byRecent?: boolean; byFavorites?: boolean }) => Promise<Playlist[]>;
+  autoGeneratePlaylists: (options?: SmartPlaylistOptions) => Promise<Playlist[]>;
+  // Real-time search and filter functionality
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+  filteredMediaList: MediaItem[];
+  filterMedia: (query: string, options?: { genre?: string; type?: 'audio' | 'video' }) => MediaItem[];
+  genres: string[];
 }
 
 const LibraryContext = createContext<LibraryContextType | null>(null);
@@ -592,13 +608,23 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const autoGeneratePlaylists = useCallback(
-    async (options: { byGenre?: boolean; byRecent?: boolean; byFavorites?: boolean } = { byGenre: true, byRecent: true, byFavorites: true }): Promise<Playlist[]> => {
+    async (
+      options: SmartPlaylistOptions = {
+        byGenre: true,
+        byYear: true,
+        byPlayCount: true,
+        byRecent: true,
+        byFavorites: true,
+        minTracks: 1,
+      }
+    ): Promise<Playlist[]> => {
       const newPlaylists: Playlist[] = [];
       const currentList = mediaListRef.current;
       const existingTitles = new Set(playlists.map((p) => p.title.toLowerCase()));
+      const minTracks = options.minTracks || 1;
 
       // 1. Playlists par Genres musicaux
-      if (options.byGenre) {
+      if (options.byGenre !== false) {
         const genreMap = new Map<string, string[]>();
         currentList.forEach((m) => {
           if (m.type === 'audio' && m.genre && m.genre.trim() && m.genre.toLowerCase() !== 'inconnu') {
@@ -610,14 +636,17 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
 
         for (const [genre, ids] of genreMap.entries()) {
           const title = `Mix ${genre}`;
-          if (!existingTitles.has(title.toLowerCase()) && ids.length >= 1) {
+          if (!existingTitles.has(title.toLowerCase()) && ids.length >= minTracks) {
             const pl: Playlist = {
               id: `playlist_genre_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
               title,
-              description: `Playlist automatique basée sur le genre musical ${genre} (${ids.length} titres)`,
+              description: `Playlist intelligente basée sur le genre musical ${genre} (${ids.length} titres)`,
               mediaIds: ids,
               createdAt: Date.now(),
               updatedAt: Date.now(),
+              isSmart: true,
+              smartType: 'genre',
+              smartCriteria: genre,
             };
             await savePlaylistToDB(pl);
             newPlaylists.push(pl);
@@ -626,11 +655,165 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // 2. Playlists des Derniers Ajouts (Récents)
+      // 2. Playlists par Année de sortie et Décennie
+      if (options.byYear || options.byDecade) {
+        const decadeMap = new Map<string, string[]>();
+        const yearMap = new Map<number, string[]>();
+
+        currentList.forEach((m) => {
+          let yr = m.year;
+          // Fallback: look for 4-digit year in filename or title
+          if (!yr) {
+            const match = (m.title + ' ' + (m.filename || '')).match(/\b(19\d\d|20\d\d)\b/);
+            if (match) {
+              const parsed = parseInt(match[1], 10);
+              if (parsed >= 1950 && parsed <= 2030) yr = parsed;
+            }
+          }
+
+          if (yr && yr >= 1950 && yr <= 2030) {
+            // Group by year
+            if (!yearMap.has(yr)) yearMap.set(yr, []);
+            yearMap.get(yr)!.push(m.id);
+
+            // Group by decade
+            let decadeKey = '';
+            if (yr >= 2020) decadeKey = 'Années 2020';
+            else if (yr >= 2010) decadeKey = 'Années 2010';
+            else if (yr >= 2000) decadeKey = 'Années 2000';
+            else if (yr >= 1990) decadeKey = 'Années 90s';
+            else if (yr >= 1980) decadeKey = 'Années 80s';
+            else decadeKey = 'Classiques Rétro';
+
+            if (!decadeMap.has(decadeKey)) decadeMap.set(decadeKey, []);
+            decadeMap.get(decadeKey)!.push(m.id);
+          }
+        });
+
+        // Add decade playlists
+        for (const [decade, ids] of decadeMap.entries()) {
+          const title = `Rétrospective ${decade}`;
+          if (!existingTitles.has(title.toLowerCase()) && ids.length >= minTracks) {
+            const pl: Playlist = {
+              id: `playlist_decade_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+              title,
+              description: `Playlist intelligente regroupant les morceaux des ${decade} (${ids.length} titres)`,
+              mediaIds: ids,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              isSmart: true,
+              smartType: 'year',
+              smartCriteria: decade,
+            };
+            await savePlaylistToDB(pl);
+            newPlaylists.push(pl);
+            existingTitles.add(title.toLowerCase());
+          }
+        }
+
+        // Add prominent specific year playlists (if >= minTracks)
+        for (const [yr, ids] of yearMap.entries()) {
+          if (ids.length >= Math.max(2, minTracks)) {
+            const title = `Sélection ${yr}`;
+            if (!existingTitles.has(title.toLowerCase())) {
+              const pl: Playlist = {
+                id: `playlist_year_${yr}_${Date.now()}`,
+                title,
+                description: `Morceaux sortis en ${yr} (${ids.length} titres)`,
+                mediaIds: ids,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+                isSmart: true,
+                smartType: 'year',
+                smartCriteria: `${yr}`,
+              };
+              await savePlaylistToDB(pl);
+              newPlaylists.push(pl);
+              existingTitles.add(title.toLowerCase());
+            }
+          }
+        }
+      }
+
+      // 3. Playlists par Nombre d'écoutes (Play Count)
+      if (options.byPlayCount) {
+        // A) Les plus écoutés (Top Hits)
+        const mostPlayed = currentList
+          .filter((m) => (m.playCount || 0) > 0)
+          .sort((a, b) => (b.playCount || 0) - (a.playCount || 0))
+          .slice(0, 30);
+
+        const topTitle = 'Top Hits (Les Plus Écoutés)';
+        if (!existingTitles.has(topTitle.toLowerCase()) && mostPlayed.length >= minTracks) {
+          const pl: Playlist = {
+            id: `playlist_top_hits_${Date.now()}`,
+            title: topTitle,
+            description: 'Vos morceaux favoris les plus fréquemment écoutés selon vos statistiques locales',
+            mediaIds: mostPlayed.map((m) => m.id),
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            isSmart: true,
+            smartType: 'playCount',
+            smartCriteria: 'most_played',
+          };
+          await savePlaylistToDB(pl);
+          newPlaylists.push(pl);
+          existingTitles.add(topTitle.toLowerCase());
+        }
+
+        // B) Découvertes (Jamais Écoutés)
+        const unplayed = currentList
+          .filter((m) => !m.playCount || m.playCount === 0)
+          .slice(0, 30);
+
+        const unplayedTitle = 'Découvertes & Jamais Écoutés';
+        if (!existingTitles.has(unplayedTitle.toLowerCase()) && unplayed.length >= minTracks) {
+          const pl: Playlist = {
+            id: `playlist_unplayed_${Date.now()}`,
+            title: unplayedTitle,
+            description: 'Redécouvrez des titres de votre bibliothèque que vous n\'avez pas encore écoutés',
+            mediaIds: unplayed.map((m) => m.id),
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            isSmart: true,
+            smartType: 'playCount',
+            smartCriteria: 'unplayed',
+          };
+          await savePlaylistToDB(pl);
+          newPlaylists.push(pl);
+          existingTitles.add(unplayedTitle.toLowerCase());
+        }
+
+        // C) En boucle (Heavy Rotation >= 3 plays)
+        const heavyRotation = currentList
+          .filter((m) => (m.playCount || 0) >= 3)
+          .sort((a, b) => (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0))
+          .slice(0, 25);
+
+        const heavyTitle = 'En Boucle (Heavy Rotation)';
+        if (!existingTitles.has(heavyTitle.toLowerCase()) && heavyRotation.length >= minTracks) {
+          const pl: Playlist = {
+            id: `playlist_heavy_${Date.now()}`,
+            title: heavyTitle,
+            description: 'Morceaux écoutés en boucle plusieurs fois récemment',
+            mediaIds: heavyRotation.map((m) => m.id),
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            isSmart: true,
+            smartType: 'playCount',
+            smartCriteria: 'heavy_rotation',
+          };
+          await savePlaylistToDB(pl);
+          newPlaylists.push(pl);
+          existingTitles.add(heavyTitle.toLowerCase());
+        }
+      }
+
+      // 4. Playlists des Derniers Ajouts (Récents)
       if (options.byRecent) {
         const sortedByAdded = [...currentList].sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0)).slice(0, 30);
         const title = 'Derniers ajouts';
-        if (!existingTitles.has(title.toLowerCase()) && sortedByAdded.length >= 1) {
+        if (!existingTitles.has(title.toLowerCase()) && sortedByAdded.length >= minTracks) {
           const pl: Playlist = {
             id: `playlist_recent_${Date.now()}`,
             title,
@@ -638,6 +821,9 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
             mediaIds: sortedByAdded.map((m) => m.id),
             createdAt: Date.now(),
             updatedAt: Date.now(),
+            isSmart: true,
+            smartType: 'recent',
+            smartCriteria: 'latest',
           };
           await savePlaylistToDB(pl);
           newPlaylists.push(pl);
@@ -645,11 +831,11 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // 3. Playlists des Coups de Cœur (Favoris)
+      // 5. Playlists des Coups de Cœur (Favoris)
       if (options.byFavorites) {
         const favs = currentList.filter((m) => m.isFavorite);
         const title = 'Coups de Cœur';
-        if (!existingTitles.has(title.toLowerCase()) && favs.length >= 1) {
+        if (!existingTitles.has(title.toLowerCase()) && favs.length >= minTracks) {
           const pl: Playlist = {
             id: `playlist_favs_${Date.now()}`,
             title,
@@ -657,6 +843,9 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
             mediaIds: favs.map((m) => m.id),
             createdAt: Date.now(),
             updatedAt: Date.now(),
+            isSmart: true,
+            smartType: 'favorites',
+            smartCriteria: 'favorites',
           };
           await savePlaylistToDB(pl);
           newPlaylists.push(pl);
@@ -671,6 +860,52 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     },
     [playlists]
   );
+
+  // Real-time search query state
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Extract unique genres across all media
+  const genres = useMemo(() => {
+    const set = new Set<string>();
+    mediaList.forEach((m) => {
+      if (m.genre && m.genre.trim()) {
+        set.add(m.genre.trim());
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [mediaList]);
+
+  // Real-time filtering function supporting title, artist, album, genre, filename
+  const filterMedia = useCallback(
+    (query: string, options?: { genre?: string; type?: 'audio' | 'video' }): MediaItem[] => {
+      const q = (query || '').trim().toLowerCase();
+      return mediaList.filter((item) => {
+        if (options?.type && item.type !== options.type) {
+          return false;
+        }
+        if (options?.genre && options.genre !== 'all') {
+          const itemGenre = (item.genre || '').toLowerCase();
+          if (itemGenre !== options.genre.toLowerCase()) {
+            return false;
+          }
+        }
+        if (!q) return true;
+        const titleMatch = (item.title || '').toLowerCase().includes(q);
+        const artistMatch = (item.artist || '').toLowerCase().includes(q);
+        const albumMatch = (item.album || '').toLowerCase().includes(q);
+        const genreMatch = (item.genre || '').toLowerCase().includes(q);
+        const filenameMatch = (item.filename || '').toLowerCase().includes(q);
+        return titleMatch || artistMatch || albumMatch || genreMatch || filenameMatch;
+      });
+    },
+    [mediaList]
+  );
+
+  // Real-time filtered media list reactive to searchQuery
+  const filteredMediaList = useMemo(() => {
+    if (!searchQuery.trim()) return mediaList;
+    return filterMedia(searchQuery);
+  }, [mediaList, searchQuery, filterMedia]);
 
   return (
     <LibraryContext.Provider
@@ -705,6 +940,11 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         deleteMediaLyrics,
         updateMediaMetadata,
         autoGeneratePlaylists,
+        searchQuery,
+        setSearchQuery,
+        filteredMediaList,
+        filterMedia,
+        genres,
       }}
     >
       {children}

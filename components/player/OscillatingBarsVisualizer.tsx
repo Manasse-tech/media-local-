@@ -20,10 +20,9 @@ export function OscillatingBarsVisualizer({ size, activeCover, isPlaying }: Osci
     if (!ctx) return;
 
     let animationFrameId: number;
-    const analyser = audioEngine.getAnalyser();
-
     const barCount = 72;
     const peaks = new Float32Array(barCount);
+    const dataArray = new Uint8Array(256);
 
     const render = () => {
       animationFrameId = requestAnimationFrame(render);
@@ -46,22 +45,18 @@ export function OscillatingBarsVisualizer({ size, activeCover, isPlaying }: Osci
         ctx.stroke();
       }
 
-      const bufferLength = analyser ? analyser.frequencyBinCount : 0;
-      const dataArray = analyser ? new Uint8Array(bufferLength) : null;
-      if (analyser && dataArray) {
-        analyser.getByteFrequencyData(dataArray);
-      }
+      const hasAudioData = audioEngine.fillFrequencyData(dataArray);
 
       const time = Date.now() * 0.0025;
       
       // Calculate active sub-bass frequency energy to drive dynamic organic scaling / pulsing
       let bassEnergy = 0;
-      if (dataArray) {
+      if (hasAudioData) {
         for (let j = 0; j < 8; j++) {
           bassEnergy += dataArray[j] || 0;
         }
       }
-      const bassPercent = dataArray ? bassEnergy / (8 * 255) : 0;
+      const bassPercent = hasAudioData ? bassEnergy / (8 * 255) : 0;
       const pulseScale = 1.0 + bassPercent * 0.06;
 
       const innerRadius = (width / 2) * 0.38 * pulseScale;
@@ -72,9 +67,9 @@ export function OscillatingBarsVisualizer({ size, activeCover, isPlaying }: Osci
         const angle = (i / barCount) * Math.PI * 2;
 
         let percent = 0;
-        if (dataArray && bufferLength > 0) {
+        if (hasAudioData) {
           // Map circular indexes to lower/mid ranges where human ears perceive beat oscillation
-          const sampleIndex = Math.floor((Math.abs(i - barCount / 2) / (barCount / 2)) * (bufferLength * 0.45));
+          const sampleIndex = Math.floor((Math.abs(i - barCount / 2) / (barCount / 2)) * (256 * 0.45));
           const val = dataArray[sampleIndex] || 0;
           percent = Math.min(1, val / 255);
         } else {

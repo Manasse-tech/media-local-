@@ -16,10 +16,11 @@ interface SearchViewProps {
 }
 
 export function SearchView({ onOpenAlbum, onOpenArtist, onOpenPlaylist }: SearchViewProps) {
-  const { mediaList, playlists } = useLibrary();
+  const { mediaList, playlists, searchQuery, setSearchQuery, filterMedia } = useLibrary();
   const { playMedia } = usePlayer();
 
-  const [query, setQuery] = useState('');
+  const query = searchQuery;
+  const setQuery = setSearchQuery;
 
   // Update FlexSearch index when mediaList changes
   useEffect(() => {

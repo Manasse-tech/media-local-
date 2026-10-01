@@ -11,6 +11,7 @@ import { MobileNav } from './layout/MobileNav';
 
 // Player Components
 import { MiniPlayer } from './player/MiniPlayer';
+import { FloatingMiniPlayer } from './player/FloatingMiniPlayer';
 import { NowPlayingModal } from './player/NowPlayingModal';
 import { VideoPlayerOverlay } from './player/VideoPlayerOverlay';
 import { EqualizerModal } from './player/EqualizerModal';
@@ -163,7 +164,7 @@ export function AppShell() {
   };
 
   return (
-    <div className={`flex flex-col h-screen w-screen bg-slate-950/95 text-slate-100 overflow-hidden font-sans select-none relative ${activeThemeClass}`}>
+    <div className={`flex flex-col h-[100dvh] w-full max-w-full bg-slate-950 text-slate-100 overflow-hidden font-sans select-none relative ${activeThemeClass}`}>
       {/* Custom wallpaper background layer with dynamic sharpness / blur controls */}
       {customBgImage && (
         <div
@@ -183,12 +184,12 @@ export function AppShell() {
         </div>
       )}
 
-      <div className="relative z-10 flex flex-col h-full w-full overflow-hidden">
+      <div className="relative z-10 flex flex-col h-full w-full min-h-0 overflow-hidden">
         {/* Top Header Navbar */}
         <Header currentRoute={currentRoute} onRouteChange={navigateTo} />
 
         {/* Main Content Area */}
-        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden relative">
           {/* Scanning status banner */}
           {isScanning && (
             <div className="bg-blue-600/90 text-white text-xs py-1.5 px-4 text-center font-medium animate-pulse flex items-center justify-center gap-2 shrink-0 z-20">
@@ -198,7 +199,7 @@ export function AppShell() {
           )}
 
           {/* Dynamic Route View */}
-          <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <main className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
             {activeAlbum ? (
               <AlbumDetailView
                 albumName={activeAlbum}
@@ -275,6 +276,7 @@ export function AppShell() {
       <NowPlayingModal />
       <VideoPlayerOverlay />
       <EqualizerModal />
+      <FloatingMiniPlayer />
       <QueueDrawer />
       <MediaInfoModal />
       <ShortcutsModal />

@@ -27,10 +27,12 @@ import {
   Sparkles,
   Palette,
   Eye,
+  Activity,
 } from 'lucide-react';
 import { usePlayer } from '@/context/PlayerContext';
 import { formatTime } from '@/lib/metadata-parser';
 import { VisualizerCanvas } from './VisualizerCanvas';
+import { DynamicFrequencyVisualizer } from './DynamicFrequencyVisualizer';
 import { LyricsPanel } from './LyricsPanel';
 import { useDefaultAudioCover, DEFAULT_AUDIO_COVER_SVG } from '@/lib/cover-manager';
 import { DisplayCustomizerModal } from './DisplayCustomizerModal';
@@ -71,6 +73,7 @@ export function NowPlayingModal() {
   const [mobileTab, setMobileTab] = useState<'player' | 'lyrics'>('player');
   const [showLyrics, setShowLyrics] = useState(false);
   const [displayMode, setDisplayMode] = useState<'vinyl' | 'cover' | 'immersion'>('vinyl');
+  const [showVisualizer, setShowVisualizer] = useState(true);
   const [isCustomizerOpen, setIsCustomizerOpen] = useState(false);
 
   // Background & Immersion adjustments
@@ -291,6 +294,19 @@ export function NowPlayingModal() {
             <Sliders className="w-5 h-5" />
           </button>
 
+          {/* Dynamic Frequency Visualizer Toggle */}
+          <button
+            onClick={() => setShowVisualizer((prev) => !prev)}
+            className={`p-2 rounded-full transition-all cursor-pointer ${
+              showVisualizer
+                ? 'text-cyan-400 bg-cyan-950/80 ring-1 ring-cyan-500/50'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+            title="Afficher/Masquer le visualiseur de fréquences"
+          >
+            <Activity className="w-5 h-5" />
+          </button>
+
           {/* Display & Backdrop customizer full modal button */}
           <button
             onClick={() => setIsCustomizerOpen(true)}
@@ -388,10 +404,17 @@ export function NowPlayingModal() {
               {/* Lower Controls block */}
               <div className="w-full max-w-md pb-1 pt-1 flex flex-col items-center shrink-0">
                 {/* Title & Artist */}
-                <div className="w-full mb-1.5 text-center">
+                <div className="w-full mb-1 text-center">
                   <h2 className="text-lg sm:text-xl font-bold text-white truncate drop-shadow-md">{currentMedia.title}</h2>
                   <p className="text-xs sm:text-sm text-slate-300 truncate mt-0.5 drop-shadow">{currentMedia.artist}</p>
                 </div>
+
+                {/* Dynamic Audio Visualizer (Mobile) */}
+                {showVisualizer && (
+                  <div className="w-full mb-2">
+                    <DynamicFrequencyVisualizer height={55} showControls={false} />
+                  </div>
+                )}
 
                 {/* Timeline Scrubber */}
                 <div className="w-full mb-2">
@@ -546,6 +569,13 @@ export function NowPlayingModal() {
                   </button>
                 </div>
               </div>
+
+              {/* Dynamic Audio Visualizer (Desktop) */}
+              {showVisualizer && (
+                <div className="w-full mb-3">
+                  <DynamicFrequencyVisualizer height={80} showControls={true} />
+                </div>
+              )}
 
               {/* Scrubber Bar */}
               <div className="w-full mb-2.5">
