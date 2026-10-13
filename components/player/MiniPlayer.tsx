@@ -18,6 +18,7 @@ import {
   Film,
   Music2,
   Heart,
+  Pin,
 } from 'lucide-react';
 import { usePlayer } from '@/context/PlayerContext';
 import { MediaThumbnail } from '@/components/media/MediaThumbnail';
@@ -47,6 +48,8 @@ export function MiniPlayer() {
     setIsVideoPlayerOpen,
     setIsQueueOpen,
     setIsEqualizerOpen,
+    isFloatingMiniPlayerOpen,
+    setIsFloatingMiniPlayerOpen,
     stopPlayback,
     toggleFavorite,
   } = usePlayer();
@@ -274,6 +277,22 @@ export function MiniPlayer() {
               className="w-16 lg:w-20 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
             />
           </div>
+
+          <button
+            id="mini-player-floating-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsFloatingMiniPlayerOpen(!isFloatingMiniPlayerOpen);
+            }}
+            className={`p-2 rounded-lg transition-colors ml-1 ${
+              isFloatingMiniPlayerOpen
+                ? 'text-blue-400 bg-blue-500/20 hover:bg-blue-500/30'
+                : 'text-slate-400 hover:text-blue-400 hover:bg-slate-800'
+            }`}
+            title="Mini-lecteur flottant (Toujours au premier plan - Raccourci P)"
+          >
+            <Pin className={`w-4 h-4 ${isFloatingMiniPlayerOpen ? 'rotate-45' : ''}`} />
+          </button>
 
           <button
             id="mini-player-expand-btn"

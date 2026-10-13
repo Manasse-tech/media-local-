@@ -35,14 +35,16 @@ interface CustomPreset {
 const STORAGE_KEY_CUSTOM_PRESETS = 'local_media_custom_eq_presets';
 
 export function EqualizerStudio({ onClose }: { onClose?: () => void }) {
-  const [activePreset, setActivePreset] = useState<string>('Flat');
-  const [bandValues, setBandValues] = useState<number[]>([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-  const [bassGain, setBassGain] = useState<number>(0);
-  const [trebleGain, setTrebleGain] = useState<number>(0);
+  const [activePreset, setActivePreset] = useState<string>('Personnalisé');
+  const [bandValues, setBandValues] = useState<number[]>(() => audioEngine.getBandGains());
+  const [bassGain, setBassGain] = useState<number>(() => audioEngine.getBassGain());
+  const [trebleGain, setTrebleGain] = useState<number>(() => audioEngine.getTrebleGain());
   const [preampGain, setPreampGain] = useState<number>(() => audioEngine.getPreampGain());
-  const [balance, setBalance] = useState<number>(0);
+  const [balance, setBalance] = useState<number>(() => audioEngine.getBalance());
   const [isBypassed, setIsBypassed] = useState<boolean>(() => audioEngine.getBypassState());
-  const [qFactor, setQFactor] = useState<number>(1.4);
+  const [qFactor, setQFactor] = useState<number>(() => audioEngine.getQFactor());
+  const [isAttached, setIsAttached] = useState<boolean>(() => audioEngine.isAttached());
+  const [ctxState, setCtxState] = useState<string>(() => audioEngine.getAudioContextState());
   const [customPresets, setCustomPresets] = useState<CustomPreset[]>(() => {
     if (typeof window === 'undefined') return [];
     try {
@@ -57,6 +59,34 @@ export function EqualizerStudio({ onClose }: { onClose?: () => void }) {
   const [viewTab, setViewTab] = useState<'eq' | 'spatial' | 'presets'>('eq');
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Sync state with audio engine lifecycle and storage
+  useEffect(() => {
+    audioEngine.ensureAudioGraph();
+    const syncState = () => {
+      setIsAttached(audioEngine.isAttached());
+      setCtxState(audioEngine.getAudioContextState());
+      setBandValues(audioEngine.getBandGains());
+      setBassGain(audioEngine.getBassGain());
+      setTrebleGain(audioEngine.getTrebleGain());
+      setPreampGain(audioEngine.getPreampGain());
+      setBalance(audioEngine.getBalance());
+      setIsBypassed(audioEngine.getBypassState());
+      setQFactor(audioEngine.getQFactor());
+    };
+
+    syncState();
+    const interval = setInterval(() => {
+      setIsAttached(audioEngine.isAttached());
+      setCtxState(audioEngine.getAudioContextState());
+    }, 800);
+
+    window.addEventListener('audio-engine-state-changed', syncState);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('audio-engine-state-changed', syncState);
+    };
+  }, []);
 
   // Update band gain
   const handleBandChange = useCallback((index: number, val: number) => {
@@ -332,7 +362,7 @@ export function EqualizerStudio({ onClose }: { onClose?: () => void }) {
             <Sliders className="w-5 h-5" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-base font-bold text-white tracking-tight">
                 Égaliseur Studio Web Audio
               </h2>
@@ -343,6 +373,24 @@ export function EqualizerStudio({ onClose }: { onClose?: () => void }) {
               }`}>
                 {isBypassed ? 'Bypass' : 'Actif'}
               </span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium tracking-wide flex items-center gap-1.5 ${
+                isAttached
+                  ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/40'
+                  : 'bg-slate-800/80 text-slate-300 border border-slate-700/60'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  isAttached ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                }`} />
+                {isAttached ? 'Signal Connecté' : 'Prêt (en attente lecture)'}
+              </span>
+              {ctxState === 'suspended' && (
+                <button
+                  onClick={() => audioEngine.resume()}
+                  className="px-2 py-0.5 rounded-full text-[10px] bg-blue-600/30 text-blue-300 hover:bg-blue-600/50 border border-blue-500/40 cursor-pointer font-medium"
+                >
+                  Activer Audio
+                </button>
+              )}
             </div>
             <p className="text-xs text-slate-400">
               10 bandes biquad IIR • Analyse spectrale FFT en temps réel

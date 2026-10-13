@@ -66,7 +66,7 @@ export function VideosView() {
   }, [videoList, searchQuery, sortField, sortOrder]);
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 max-w-7xl mx-auto w-full">
+    <div className="flex-1 min-h-0 flex flex-col overflow-y-auto p-4 md:p-8 space-y-6 max-w-7xl mx-auto w-full">
       <input
         ref={fileInputRef}
         type="file"
@@ -274,8 +274,10 @@ export function VideosView() {
           <div
             className="fixed z-[9999] w-48 bg-slate-950 border border-slate-800 rounded-xl shadow-2xl py-1 text-xs text-slate-300 animate-in fade-in zoom-in-95 duration-100 pointer-events-auto"
             style={{
-              top: `${menuAnchor.rect.bottom + window.scrollY + 6}px`,
-              left: `${Math.min(window.innerWidth - 200, menuAnchor.rect.left + window.scrollX - 160)}px`,
+              top: `${menuAnchor.rect.bottom + 220 > window.innerHeight
+                ? Math.max(12, menuAnchor.rect.top - 220 - 6)
+                : menuAnchor.rect.bottom + 6}px`,
+              left: `${Math.max(12, Math.min(window.innerWidth - 200, menuAnchor.rect.left - 160))}px`,
             }}
             onClick={(e) => e.stopPropagation()}
           >

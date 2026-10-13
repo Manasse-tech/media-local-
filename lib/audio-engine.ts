@@ -74,9 +74,13 @@ export interface Spatial3DConfig {
   spatialWidth: number; // 0 to 200%
 }
 
+const STORAGE_KEY_EQ_STATE = 'local_media_equalizer_state';
+
 class AudioEngine {
   private ctx: AudioContext | null = null;
-  private sourceNode: MediaElementAudioSourceNode | null = null;
+  // WeakMap preserves MediaElementAudioSourceNode instances per DOM element to avoid InvalidStateError
+  private sourceMap = new WeakMap<HTMLMediaElement, MediaElementAudioSourceNode>();
+  private activeSourceNode: MediaElementAudioSourceNode | null = null;
   private connectedElement: HTMLMediaElement | null = null;
   private analyser: AnalyserNode | null = null;
   private panner: StereoPannerNode | null = null;
@@ -93,6 +97,8 @@ class AudioEngine {
   private currentBassGain = 0;
   private currentTrebleGain = 0;
   private currentPreampGain = 0; // in dB
+  private currentBalance = 0;
+  private currentQFactor = 1.4;
 
   // 3D Binaural & Acoustic Simulation Nodes
   private spatialDryGain: GainNode | null = null;
@@ -126,6 +132,52 @@ class AudioEngine {
     spatialWidth: 1.0,
   };
 
+  constructor() {
+    this.loadSettingsFromStorage();
+  }
+
+  private loadSettingsFromStorage() {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY_EQ_STATE);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed.bandGains) && parsed.bandGains.length === 10) {
+          this.currentBandGains = parsed.bandGains;
+        }
+        if (typeof parsed.bass === 'number') this.currentBassGain = parsed.bass;
+        if (typeof parsed.treble === 'number') this.currentTrebleGain = parsed.treble;
+        if (typeof parsed.preamp === 'number') this.currentPreampGain = parsed.preamp;
+        if (typeof parsed.balance === 'number') this.currentBalance = parsed.balance;
+        if (typeof parsed.qFactor === 'number') this.currentQFactor = parsed.qFactor;
+        if (typeof parsed.isBypassed === 'boolean') this.isBypassed = parsed.isBypassed;
+        if (typeof parsed.isNormalized === 'boolean') this.isNormalized = parsed.isNormalized;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  private saveSettingsToStorage() {
+    if (typeof window === 'undefined') return;
+    try {
+      const data = {
+        bandGains: this.currentBandGains,
+        bass: this.currentBassGain,
+        treble: this.currentTrebleGain,
+        preamp: this.currentPreampGain,
+        balance: this.currentBalance,
+        qFactor: this.currentQFactor,
+        isBypassed: this.isBypassed,
+        isNormalized: this.isNormalized,
+      };
+      localStorage.setItem(STORAGE_KEY_EQ_STATE, JSON.stringify(data));
+      window.dispatchEvent(new CustomEvent('audio-engine-state-changed'));
+    } catch {
+      // ignore
+    }
+  }
+
   public getAudioContext(): AudioContext | null {
     return this.ctx;
   }
@@ -134,14 +186,96 @@ class AudioEngine {
     return this.analyser;
   }
 
-  public init(mediaElement: HTMLMediaElement): boolean {
+  /**
+   * Fills a pre-allocated Uint8Array with frequency spectrum data without heap allocations.
+   * Returns true if active frequency data was copied, false otherwise.
+   */
+  public fillFrequencyData(targetArray: Uint8Array<ArrayBuffer>): boolean {
+    if (this.analyser && this.isAttached()) {
+      this.analyser.getByteFrequencyData(targetArray);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Fills a pre-allocated Uint8Array with waveform time-domain data without heap allocations.
+   * Returns true if active waveform data was copied, false otherwise.
+   */
+  public fillTimeDomainData(targetArray: Uint8Array<ArrayBuffer>): boolean {
+    if (this.analyser && this.isAttached()) {
+      this.analyser.getByteTimeDomainData(targetArray);
+      return true;
+    }
+    return false;
+  }
+
+  public isAttached(): boolean {
+    return Boolean(
+      this.connectedElement &&
+      this.isInitialized &&
+      this.ctx &&
+      this.ctx.state !== 'closed'
+    );
+  }
+
+  public getAudioContextState(): AudioContextState | 'uninitialized' {
+    return this.ctx?.state || 'uninitialized';
+  }
+
+  public getConnectedElement(): HTMLMediaElement | null {
+    return this.connectedElement;
+  }
+
+  public getBandGains(): number[] {
+    return [...this.currentBandGains];
+  }
+
+  public getBassGain(): number {
+    return this.currentBassGain;
+  }
+
+  public getTrebleGain(): number {
+    return this.currentTrebleGain;
+  }
+
+  public getPreampGain(): number {
+    return this.currentPreampGain;
+  }
+
+  public getBalance(): number {
+    return this.currentBalance;
+  }
+
+  public getQFactor(): number {
+    return this.currentQFactor;
+  }
+
+  public getBypassState(): boolean {
+    return this.isBypassed;
+  }
+
+  public getIsNormalized(): boolean {
+    return this.isNormalized;
+  }
+
+  /**
+   * Ensures the Web Audio API DSP processing graph exists and is connected to the destination.
+   * This graph is built once and stays alive throughout the app lifecycle.
+   */
+  public ensureAudioGraph(): boolean {
     if (typeof window === 'undefined') return false;
-    if (this.connectedElement === mediaElement && this.isInitialized) {
+    if (this.ctx && this.preampGainNode && this.analyser && this.filters.length === 10) {
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
+      }
       return true;
     }
 
     try {
-      const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const AudioCtxClass =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AudioCtxClass) return false;
 
       if (!this.ctx) {
@@ -149,13 +283,7 @@ class AudioEngine {
       }
 
       if (this.ctx.state === 'suspended') {
-        this.ctx.resume();
-      }
-
-      // MediaElementSource can only be created once per media element
-      if (!this.sourceNode || this.connectedElement !== mediaElement) {
-        this.sourceNode = this.ctx.createMediaElementSource(mediaElement);
-        this.connectedElement = mediaElement;
+        this.ctx.resume().catch(() => {});
       }
 
       this.analyser = this.ctx.createAnalyser();
@@ -164,7 +292,7 @@ class AudioEngine {
 
       // Pre-amp gain stage
       this.preampGainNode = this.ctx.createGain();
-      const preampLinear = Math.pow(10, this.currentPreampGain / 20);
+      const preampLinear = Math.pow(10, (this.isBypassed ? 0 : this.currentPreampGain) / 20);
       this.preampGainNode.gain.value = preampLinear;
 
       // Bass boost filter (lowshelf)
@@ -184,7 +312,7 @@ class AudioEngine {
         const filter = this.ctx!.createBiquadFilter();
         filter.type = 'peaking';
         filter.frequency.value = freq;
-        filter.Q.value = 1.4;
+        filter.Q.value = this.currentQFactor;
         filter.gain.value = this.isBypassed ? 0 : (this.currentBandGains[idx] || 0);
         return filter;
       });
@@ -192,14 +320,19 @@ class AudioEngine {
       // Stereo panner for balance (if supported)
       if (this.ctx.createStereoPanner) {
         this.panner = this.ctx.createStereoPanner();
-        this.panner.pan.value = 0;
+        this.panner.pan.value = this.currentBalance;
       }
 
       // Dynamics compressor for volume normalization (EBU R128 level matching simulation)
       this.compressor = this.ctx.createDynamicsCompressor();
-      this.compressor.threshold.value = -24; // dB
+      if (this.isNormalized) {
+        this.compressor.threshold.value = -24; // dB
+        this.compressor.ratio.value = 4;
+      } else {
+        this.compressor.threshold.value = 0;
+        this.compressor.ratio.value = 1;
+      }
       this.compressor.knee.value = 12; // dB
-      this.compressor.ratio.value = 4;
       this.compressor.attack.value = 0.003; // seconds
       this.compressor.release.value = 0.25; // seconds
 
@@ -279,15 +412,9 @@ class AudioEngine {
       this.reverbWetGain.gain.value = this.spatialConfig.reverbWet;
       this.reverbDryGain.gain.value = 1.0;
 
-      // Connect graph:
-      // source -> preamp -> bass -> treble -> filters -> panner
-      // -> [Dry path] -> spatialDryGain -> spatialPostSum
-      // -> [Wet path] -> crossfeedSplitter -> crossfeedMerger -> panner3D -> (dry+reverb) -> spatialWetGain -> spatialPostSum
-      // -> compressor -> gainNode -> analyser -> destination
-      let lastNode: AudioNode = this.sourceNode;
-
-      lastNode.connect(this.preampGainNode);
-      lastNode = this.preampGainNode;
+      // Connect DSP chain:
+      // preamp -> bass -> treble -> filters (0..9) -> panner
+      let lastNode: AudioNode = this.preampGainNode;
 
       lastNode.connect(this.bassFilter);
       lastNode = this.bassFilter;
@@ -335,12 +462,74 @@ class AudioEngine {
       this.gainNode.connect(this.analyser);
       this.analyser.connect(this.ctx.destination);
 
-      this.isInitialized = true;
       return true;
     } catch (err) {
-      console.warn('Web Audio API Equalizer initialization fallback:', err);
+      console.warn('Web Audio API DSP graph initialization warning:', err);
       return false;
     }
+  }
+
+  /**
+   * Connects any HTMLMediaElement (audio or video) to the equalizer DSP graph.
+   * Uses a WeakMap to guarantee createMediaElementSource is called strictly once per element.
+   */
+  public connectElement(mediaElement: HTMLMediaElement): boolean {
+    if (typeof window === 'undefined' || !mediaElement) return false;
+
+    const graphReady = this.ensureAudioGraph();
+    if (!graphReady || !this.ctx || !this.preampGainNode) {
+      return false;
+    }
+
+    if (this.connectedElement === mediaElement && this.isInitialized) {
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
+      }
+      return true;
+    }
+
+    try {
+      let sourceNode = this.sourceMap.get(mediaElement);
+      if (!sourceNode) {
+        sourceNode = this.ctx.createMediaElementSource(mediaElement);
+        this.sourceMap.set(mediaElement, sourceNode);
+      }
+
+      // Disconnect previous active source if changing elements
+      if (this.activeSourceNode && this.activeSourceNode !== sourceNode) {
+        try {
+          this.activeSourceNode.disconnect();
+        } catch {
+          // ignore
+        }
+      }
+
+      // Route through the equalizer preamp stage
+      sourceNode.connect(this.preampGainNode);
+      this.activeSourceNode = sourceNode;
+      this.connectedElement = mediaElement;
+      this.isInitialized = true;
+
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
+      }
+
+      window.dispatchEvent(new CustomEvent('audio-engine-state-changed'));
+      return true;
+    } catch (err) {
+      console.warn('Web Audio API connectElement error:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Backward-compatible init method
+   */
+  public init(mediaElement?: HTMLMediaElement): boolean {
+    if (mediaElement) {
+      return this.connectElement(mediaElement);
+    }
+    return this.ensureAudioGraph();
   }
 
   public setVolumeNormalization(enabled: boolean) {
@@ -355,10 +544,7 @@ class AudioEngine {
         this.compressor.ratio.setTargetAtTime(1, this.ctx.currentTime, 0.05);
       }
     }
-  }
-
-  public getIsNormalized(): boolean {
-    return this.isNormalized;
+    this.saveSettingsToStorage();
   }
 
   public setMasterGain(vol: number): void {
@@ -383,10 +569,7 @@ class AudioEngine {
       const linear = Math.pow(10, (this.isBypassed ? 0 : gainDb) / 20);
       this.preampGainNode.gain.setTargetAtTime(linear, this.ctx.currentTime, 0.05);
     }
-  }
-
-  public getPreampGain(): number {
-    return this.currentPreampGain;
+    this.saveSettingsToStorage();
   }
 
   public setBandGain(bandIndex: number, gainDb: number) {
@@ -395,6 +578,7 @@ class AudioEngine {
       const target = this.isBypassed ? 0 : gainDb;
       this.filters[bandIndex].gain.setTargetAtTime(target, this.ctx.currentTime, 0.05);
     }
+    this.saveSettingsToStorage();
   }
 
   public setBassGain(gainDb: number) {
@@ -403,6 +587,7 @@ class AudioEngine {
       const target = this.isBypassed ? 0 : gainDb;
       this.bassFilter.gain.setTargetAtTime(target, this.ctx.currentTime, 0.05);
     }
+    this.saveSettingsToStorage();
   }
 
   public setTrebleGain(gainDb: number) {
@@ -411,25 +596,33 @@ class AudioEngine {
       const target = this.isBypassed ? 0 : gainDb;
       this.trebleFilter.gain.setTargetAtTime(target, this.ctx.currentTime, 0.05);
     }
+    this.saveSettingsToStorage();
   }
 
   public setFilterQ(qValue: number) {
+    this.currentQFactor = qValue;
     if (this.ctx) {
       this.filters.forEach((filter) => {
         filter.Q.setTargetAtTime(qValue, this.ctx!.currentTime, 0.05);
       });
     }
+    this.saveSettingsToStorage();
   }
 
   public setBalance(pan: number) {
+    this.currentBalance = Math.max(-1, Math.min(1, pan));
     if (this.panner && this.ctx) {
-      this.panner.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)), this.ctx.currentTime, 0.05);
+      this.panner.pan.setTargetAtTime(this.currentBalance, this.ctx.currentTime, 0.05);
     }
+    this.saveSettingsToStorage();
   }
 
   public setBypass(bypassed: boolean) {
     this.isBypassed = bypassed;
-    if (!this.ctx) return;
+    if (!this.ctx) {
+      this.saveSettingsToStorage();
+      return;
+    }
 
     const time = this.ctx.currentTime;
     // Set preamp
@@ -448,10 +641,7 @@ class AudioEngine {
     this.filters.forEach((filter, idx) => {
       filter.gain.setTargetAtTime(bypassed ? 0 : this.currentBandGains[idx], time, 0.05);
     });
-  }
-
-  public getBypassState(): boolean {
-    return this.isBypassed;
+    this.saveSettingsToStorage();
   }
 
   public applyPreset(presetName: EqualizerPresetName) {
@@ -475,7 +665,7 @@ class AudioEngine {
       totalDb[i] = preampOffset;
     }
 
-    if (this.isBypassed || !this.isInitialized) {
+    if (this.isBypassed || !this.filters.length) {
       return totalDb;
     }
 
@@ -523,8 +713,9 @@ class AudioEngine {
   }
 
   public resume() {
+    this.ensureAudioGraph();
     if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      this.ctx.resume().catch(() => {});
     }
   }
 
@@ -643,4 +834,3 @@ class AudioEngine {
 }
 
 export const audioEngine = new AudioEngine();
-

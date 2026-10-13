@@ -326,4 +326,46 @@ export async function deleteMediaLyricsFromDB(id: string): Promise<void> {
   });
 }
 
+// ==========================================
+// Continue Watching / Listening Session Store
+// ==========================================
+
+export interface SavedPlaybackSession {
+  mediaId: string;
+  position: number;
+  duration: number;
+  queueMediaIds: string[];
+  queueIndex: number;
+  updatedAt: number;
+  mediaType: 'audio' | 'video';
+  title?: string;
+  artist?: string;
+  thumbnail?: string;
+}
+
+const PLAYBACK_SESSION_KEY = 'last_active_playback_session';
+
+export async function savePlaybackSessionToDB(session: SavedPlaybackSession): Promise<void> {
+  return saveSettingToDB(PLAYBACK_SESSION_KEY, session);
+}
+
+export async function getPlaybackSessionFromDB(): Promise<SavedPlaybackSession | null> {
+  return getSettingFromDB<SavedPlaybackSession>(PLAYBACK_SESSION_KEY);
+}
+
+export async function clearPlaybackSessionFromDB(): Promise<void> {
+  try {
+    const db = await getDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction('settings', 'readwrite');
+      const store = tx.objectStore('settings');
+      store.delete(PLAYBACK_SESSION_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch {
+    // ignore
+  }
+}
+
 

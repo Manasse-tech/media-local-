@@ -713,8 +713,10 @@ export function MusicView({
           <div
             className="fixed z-[9999] w-52 bg-slate-950 border border-slate-800 rounded-xl shadow-2xl py-1 text-xs text-slate-300 animate-in fade-in zoom-in-95 duration-100 pointer-events-auto"
             style={{
-              top: `${menuAnchor.rect.bottom + window.scrollY + 6}px`,
-              left: `${Math.min(window.innerWidth - 220, menuAnchor.rect.left + window.scrollX - 170)}px`,
+              top: `${menuAnchor.rect.bottom + 320 > window.innerHeight
+                ? Math.max(12, menuAnchor.rect.top - 320 - 6)
+                : menuAnchor.rect.bottom + 6}px`,
+              left: `${Math.max(12, Math.min(window.innerWidth - 220, menuAnchor.rect.left - 170))}px`,
             }}
             onClick={(e) => e.stopPropagation()}
           >

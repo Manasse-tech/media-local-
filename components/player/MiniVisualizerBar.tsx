@@ -29,24 +29,25 @@ export function MiniVisualizerBar({
     const h = canvas.height;
     const barWidth = Math.max(2, Math.floor((width - (barCount - 1) * 2) / barCount));
 
+    const dataArray = new Uint8Array(256);
+
+    // Cached Gradient from electric blue to cyan to indigo
+    const grad = ctx.createLinearGradient(0, h, 0, 0);
+    grad.addColorStop(0, '#2563eb');
+    grad.addColorStop(0.6, '#38bdf8');
+    grad.addColorStop(1, '#a855f7');
+
     const render = () => {
       animId = requestAnimationFrame(render);
       ctx.clearRect(0, 0, width, h);
 
-      const analyser = audioEngine.getAnalyser();
-      let dataArray: Uint8Array<ArrayBuffer> | null = null;
-      if (analyser && isPlaying) {
-        const bufferLength = analyser.frequencyBinCount;
-        dataArray = new Uint8Array(new ArrayBuffer(bufferLength));
-        analyser.getByteFrequencyData(dataArray);
-      }
-
+      const hasAudioData = isPlaying ? audioEngine.fillFrequencyData(dataArray) : false;
       const time = Date.now() * 0.005;
 
       for (let i = 0; i < barCount; i++) {
         let percent = 0;
-        if (dataArray && isPlaying) {
-          const bin = Math.floor((i / barCount) * (dataArray.length * 0.55));
+        if (hasAudioData && isPlaying) {
+          const bin = Math.floor((i / barCount) * (256 * 0.55));
           const val = dataArray[bin] || 0;
           percent = Math.min(1, Math.max(0.12, val / 255));
         } else if (isPlaying) {
@@ -58,12 +59,6 @@ export function MiniVisualizerBar({
         const barH = Math.max(2.5, percent * h);
         const x = i * (barWidth + 2);
         const y = h - barH;
-
-        // Gradient from electric blue to cyan to indigo
-        const grad = ctx.createLinearGradient(0, h, 0, 0);
-        grad.addColorStop(0, '#2563eb');
-        grad.addColorStop(0.6, '#38bdf8');
-        grad.addColorStop(1, '#a855f7');
 
         ctx.fillStyle = grad;
         ctx.beginPath();
