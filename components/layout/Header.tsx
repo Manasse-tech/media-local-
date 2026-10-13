@@ -53,7 +53,7 @@ export function Header({ currentRoute, onRouteChange }: HeaderProps) {
   ];
 
   return (
-    <header className="w-full bg-slate-950/65 border-b border-white/[0.08] px-3 sm:px-5 py-3 flex items-center justify-between gap-2 shrink-0 select-none z-30 backdrop-blur-2xl overflow-hidden shadow-[0_10px_40px_rgba(0,0,0,0.18)]">
+    <header className="w-full bg-slate-950/90 border-b border-slate-800/80 px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2 shrink-0 select-none z-30 backdrop-blur-md overflow-hidden">
       {/* Hidden File Input */}
       <input
         ref={fileInputRef}
