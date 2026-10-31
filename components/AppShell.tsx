@@ -164,7 +164,7 @@ export function AppShell() {
   };
 
   return (
-    <div className={`flex flex-col h-[100dvh] w-full max-w-full bg-slate-950 text-slate-100 overflow-hidden font-sans select-none relative ${activeThemeClass}`}>
+    <div className={`app-shell flex flex-col h-[100dvh] w-full max-w-full bg-slate-950 text-slate-100 overflow-hidden font-sans select-none relative ${activeThemeClass}`}>
       {/* Custom wallpaper background layer with dynamic sharpness / blur controls */}
       {customBgImage && (
         <div
